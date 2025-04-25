@@ -95,11 +95,6 @@ const HOLDERS_RETRY_COUNT = appConfig.HOLDERS_RETRY_COUNT || 3; // Number of ret
 const HOLDERS_RETRY_DELAY_MS = appConfig.HOLDERS_RETRY_DELAY_MS || 2000; // 2 seconds
 const HOLDERS_RETRY_TIMEOUT = appConfig.HOLDERS_RETRY_TIMEOUT || 10000; // 10 seconds
 
-
-
-
-
-
 async function getTokenHolders(tokenMint) {
   for (let attempt = 1; attempt <= HOLDERS_RETRY_COUNT; attempt++) {
     try {
@@ -187,6 +182,16 @@ async function validatePumpFunProgram(connection, programId) {
   if (!programId) {
     log('ERROR', 'Program ID is undefined in validatePumpFunProgram');
     throw new Error('Program ID is undefined');
+  }
+  try {
+    const accountInfo = await connection.getAccountInfo(programId);
+    if (!accountInfo) {
+      log('WARN', `Manual check: PumpFun program account ${programId.toBase58()} not found`);
+    } else {
+      log('INFO', `Manual check: PumpFun program account ${programId.toBase58()} found`);
+    }
+  } catch (error) {
+    log('ERROR', `Manual check failed: ${error.message}`);
   }
   log('INFO', `Skipping PumpFun program validation for ${programId.toBase58()} (temporary bypass)`);
   return true;
