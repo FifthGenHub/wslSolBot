@@ -260,31 +260,26 @@ async function snipeNewPools() {
   const balance = await connection.getBalance(wallet.publicKey);
   log(`Wallet balance: ${balance / LAMPORTS_PER_SOL} SOL`);
 
-  const ws = new WebSocket(`wss://rpc.helius.xyz/?api-key=${HELIUS_API_KEY}`);
+  const ws = new WebSocket('wss://api.mainnet-beta.solana.com');
 
   ws.on('open', () => {
-    log('Connected to Helius WebSocket');
+    log('Connected to Solana WebSocket');
     ws.send(JSON.stringify({
       jsonrpc: '2.0',
       id: 1,
-      method: 'logsSubscribe',
+      method: 'programSubscribe',
       params: [
-        {
-          mentions: [RAYDIUM_AMM_PROGRAM.toBase58()]
-        },
-        {
-          commitment: 'confirmed'
-        }
+        '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp', // Raydium Liquidity Pool V4
+        { commitment: 'confirmed', encoding: 'base64' }
       ],
     }));
-  
-    // Add heartbeat to keep connection alive
+
     const heartbeatInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.ping();
-        log('Sent WebSocket heartbeat ping'); // Ensure this log is visible
+        log('Sent WebSocket heartbeat ping');
       }
-    }, 30000); // Changed from 60000 to 30000 (every 30 seconds)
+    }, 30000);
   });
 
   ws.on('message', async (data) => {
@@ -292,46 +287,25 @@ async function snipeNewPools() {
     const message = JSON.parse(data);
     log(`Message content: ${JSON.stringify(message, null, 2)}`);
 
-    if (message.method !== 'logNotification') {
-      log('Skipping message: Not a log notification');
+    if (message.method !== 'programNotification') {
+      log('Skipping message: Not a program notification');
       return;
     }
 
-    const logData = message.params?.result?.value;
-    if (!logData) {
-      log('Skipping message: No log data');
-      return;
-    }
-
-    const signature = logData.signature;
-    if (!signature) {
-      log('Skipping message: No transaction signature');
-      return;
-    }
-
-    const transactionResponse = await connection.getTransaction(signature, {
-      commitment: 'confirmed',
-      maxSupportedTransactionVersion: 0,
-    });
-    if (!transactionResponse) {
-      log(`Failed to fetch transaction for signature ${signature}`);
-      return;
-    }
-
-    const transaction = transactionResponse.transaction;
+    const transaction = message.params?.result?.value?.transaction;
     if (!transaction) {
-      log('Skipping transaction: No transaction data');
+      log('Skipping message: No transaction data');
       return;
     }
 
-    const instructions = transaction.message?.instructions || [];
+    const instructions = transaction.transaction?.message?.instructions || [];
     const raydiumInstruction = instructions.find(inst =>
-      inst?.programId === RAYDIUM_AMM_PROGRAM.toBase58() &&
+      inst?.programId === '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp' &&
       inst?.data
     );
 
     if (!raydiumInstruction) {
-      log('Skipping transaction: No Raydium AMM instruction found');
+      log('Skipping transaction: No Raydium Liquidity V4 instruction found');
       return;
     }
 
@@ -346,7 +320,7 @@ async function snipeNewPools() {
 
     const poolDetails = await fetchPoolDetails(poolAddress);
     if (!poolDetails || poolDetails.liquidity < MINIMUM_LIQUIDITY) {
-      log(`Skipping pool ${poolAddress}: Insufficient liquidity (${poolDetails?.liquidity / LAMPORTS_PER_SOL} SOL)`);
+      log(`Skipping pool ${poolAddress}: Insufficient liquidity (${ módulos?.liquidity / LAMPORTS_PER_SOL} SOL)`);
       return;
     }
 
@@ -356,8 +330,8 @@ async function snipeNewPools() {
       return;
     }
 
-    const slot = transactionResponse.slot;
-    const blockTimeResponse = await safeFetch(`https://api.helius.xyz/v0/blocks/${slot}?api-key=${HELIUS_API_KEY}`);
+    const slot = message.params?.result?.context?.slot;
+    const blockTimeResponse = await safeFetchWithRetry(`https://api.helius.xyz/v0/blocks/${slot}?api-key=${HELIUS_API_KEY}`);
     if (!blockTimeResponse || !blockTimeResponse.time) {
       log(`Failed to fetch block time for slot ${slot}`);
       return;
@@ -383,7 +357,7 @@ async function snipeNewPools() {
         buyPrice: buyPrice,
         amount: AMOUNT_TO_TRADE / LAMPORTS_PER_SOL,
       });
-      log(`Sniped ${tokenMint}: Bought ${AMOUNT_TO_TRADE / LAMPORTS_PER_SOL} SOL worth at ${buyPrice} SOL`);
+      log(`Sniped ${tokenMint}: Bought [PAPER TRADING] ${AMOUNT_TO_TRADE / LAMPORTS_PER_SOL} SOL worth at ${buyPrice} SOL`);
     }
   });
 
