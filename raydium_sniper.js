@@ -36,6 +36,7 @@ const wallet = Keypair.fromSecretKey(
 log(`Wallet Public Key: ${wallet.publicKey.toBase58()}`);
 
 // --- UPDATED RAYDIUM AMM PROGRAM ADDRESS (2025) ---
+const RAYDIUM_AMM_PROGRAM = new PublicKey('RVKd61ztZW9GdKzvKzF1dM1iQb1r7Q2Q8k5Y6bRZzjL');
 const AMOUNT_TO_TRADE = 0.01 * LAMPORTS_PER_SOL; // ~$1.34 per trade
 const MINIMUM_LIQUIDITY = 0.3 * LAMPORTS_PER_SOL; // 0.3 SOL minimum liquidity
 const TAKE_PROFIT = 1.0; // 100% profit
