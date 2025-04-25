@@ -157,6 +157,10 @@ async function delay(ms) {
 }
 
 async function validatePumpFunProgram(connection, programId) {
+  if (!programId) {
+    log('ERROR', 'Program ID is undefined in validatePumpFunProgram');
+    throw new Error('Program ID is undefined');
+  }
   log('INFO', `Skipping PumpFun program validation for ${programId.toBase58()} (temporary bypass)`);
   return true;
 }
@@ -1220,7 +1224,8 @@ async function snipeToken() {
     log('INFO', `Reset ATA creation count to ${ataCreations}`);
 
     const programId = new PublicKey(PUMP_FUN_PROGRAM_ID);
-    await validatePumpFunProgram(programId);
+    log('INFO', `Calling validatePumpFunProgram with programId: ${programId ? programId.toBase58() : 'undefined'}`);
+    await validatePumpFunProgram(connection, programId);
     const balance = await withRateLimit(() => connection.getBalance(wallet.publicKey));
     // --- Wallet balance and virtual balance setup ---
     if (PAPER_TRADING) {
@@ -1447,10 +1452,12 @@ async function main() {
     log('INFO', `Wallet Secret Key Available: ${!!wallet.secretKey}`);
     log('INFO', `Wallet Secret Key Available: ${!!wallet.secretKey}`);
     let pumpFunProgramId;
+    log('INFO', `PUMP_FUN_PROGRAM_ID value: ${PUMP_FUN_PROGRAM_ID ? PUMP_FUN_PROGRAM_ID.toBase58() : 'undefined'}`);
     try {
       pumpFunProgramId = new PublicKey(PUMP_FUN_PROGRAM_ID);
       log('INFO', `PumpFun Program ID ${PUMP_FUN_PROGRAM_ID.toBase58()}`);
     } catch (error) {
+      log('ERROR', `Failed to create PublicKey for PUMP_FUN_PROGRAM_ID: ${error.message}`);
       throw new Error(`Invalid PumpFun Program ${error.message}`);
     }
     log('INFO', `Initializing PumpFun SDK...`);
