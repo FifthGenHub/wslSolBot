@@ -90,6 +90,124 @@ async function safeFetch(url, options) {
   }
 }
 
+// Add this function near the top of raydium_sniper.js
+async function safeFetchWithRetry(url, retries = 3, delay = 1000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      if (i === retries - 1) {
+        log(`Fetch error for ${url} after ${retries} retries: ${e.message}`);
+        return null;
+      }
+      await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+    }
+  }
+}
+
+// Update the snipeNewPools function to use safeFetchWithRetry
+ws.on('message', async (data) => {
+  log('Received WebSocket message');
+  const message = JSON.parse(data);
+  log(`Message content: ${JSON.stringify(message, null, 2)}`);
+
+  if (message.method !== 'logNotification') {
+    log('Skipping message: Not a log notification');
+    return;
+  }
+
+  const logData = message.params?.result?.value;
+  if (!logData) {
+    log('Skipping message: No log data');
+    return;
+  }
+
+  const signature = logData.signature;
+  if (!signature) {
+    log('Skipping message: No transaction signature');
+    return;
+  }
+
+  const transactionResponse = await connection.getTransaction(signature, {
+    commitment: 'confirmed',
+    maxSupportedTransactionVersion: 0,
+  });
+  if (!transactionResponse) {
+    log(`Failed to fetch transaction for signature ${signature}`);
+    return;
+  }
+
+  const transaction = transactionResponse.transaction;
+  if (!transaction) {
+    log('Skipping transaction: No transaction data');
+    return;
+  }
+
+  const instructions = transaction.message?.instructions || [];
+  const raydiumInstruction = instructions.find(inst =>
+    inst?.programId === RAYDIUM_AMM_PROGRAM.toBase58() &&
+    inst?.data
+  );
+
+  if (!raydiumInstruction) {
+    log('Skipping transaction: No Raydium AMM instruction found');
+    return;
+  }
+
+  log(`Raydium instruction accounts: ${raydiumInstruction.accounts?.join(', ') || 'No accounts'}`);
+  const poolAddress = raydiumInstruction.accounts?.[0];
+  const tokenMint = raydiumInstruction.accounts?.[4];
+
+  if (!poolAddress || !tokenMint) {
+    log('Failed to extract pool address or token mint');
+    return;
+  }
+
+  const poolDetails = await fetchPoolDetails(poolAddress);
+  if (!poolDetails || poolDetails.liquidity < MINIMUM_LIQUIDITY) {
+    log(`Skipping pool ${poolAddress}: Insufficient liquidity (${poolDetails?.liquidity / LAMPORTS_PER_SOL} SOL)`);
+    return;
+  }
+
+  const metadata = await fetchTokenMetadata(tokenMint);
+  if (!metadata) {
+    log(`Skipping token ${tokenMint}: Failed to fetch metadata`);
+    return;
+  }
+
+  const slot = transactionResponse.slot;
+  const blockTimeResponse = await safeFetchWithRetry(`https://api.helius.xyz/v0/blocks/${slot}?api-key=${HELIUS_API_KEY}`);
+  if (!blockTimeResponse || !blockTimeResponse.time) {
+    log(`Failed to fetch block time for slot ${slot}`);
+    return;
+  }
+  const blockTime = blockTimeResponse.time;
+  const currentTime = Math.floor(Date.now() / 1000);
+  const tokenAgeSeconds = currentTime - blockTime;
+  if (tokenAgeSeconds > MAX_TOKEN_AGE_SECONDS) {
+    log(`Skipping token ${tokenMint}: Too old (${tokenAgeSeconds}s)`);
+    return;
+  }
+
+  log(`New pool detected: Token ${tokenMint}, Liquidity ${poolDetails.liquidity / LAMPORTS_PER_SOL} SOL`);
+  const buyPrice = await fetchTokenPrice(tokenMint, AMOUNT_TO_TRADE);
+  if (!buyPrice) {
+    log(`Skipping token ${tokenMint}: Failed to fetch buy price`);
+    return;
+  }
+
+  const success = await executeSwap(tokenMint, AMOUNT_TO_TRADE, true);
+  if (success) {
+    purchasedTokens.set(tokenMint, {
+      buyPrice: buyPrice,
+      amount: AMOUNT_TO_TRADE / LAMPORTS_PER_SOL,
+    });
+    log(`Sniped ${tokenMint}: Bought ${AMOUNT_TO_TRADE / LAMPORTS_PER_SOL} SOL worth at ${buyPrice} SOL`);
+  }
+});
+
 // Fetch token price via Jupiter API (in SOL)
 async function fetchTokenPrice(tokenMint, amount) {
   const quote = await safeFetch(`https://quote-api.jup.ag/v6/quote?inputMint=${tokenMint}&outputMint=So11111111111111111111111111111111111111112&amount=${amount}&slippageBps=100`);
@@ -159,14 +277,14 @@ async function snipeNewPools() {
         }
       ],
     }));
-
+  
     // Add heartbeat to keep connection alive
     const heartbeatInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.ping();
-        log('Sent WebSocket heartbeat ping');
+        log('Sent WebSocket heartbeat ping'); // Ensure this log is visible
       }
-    }, 60000); // Ping every 60 seconds
+    }, 30000); // Changed from 60000 to 30000 (every 30 seconds)
   });
 
   ws.on('message', async (data) => {
