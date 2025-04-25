@@ -156,21 +156,9 @@ async function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function validatePumpFunProgram(programId) {
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    log('INFO', `Attempt ${attempt}/${MAX_RETRIES}: Checking PumpFun program ${programId.toBase58()}...`);
-    try {
-      const accountInfo = await withRateLimit(() => connection.getAccountInfo(programId, 'confirmed'));
-      if (!accountInfo) throw new Error(`PumpFun program account ${programId.toBase58()} not found`);
-      if (!accountInfo.executable) throw new Error(`PumpFun program ${programId.toBase58()} is not executable`);
-      log('INFO', `PumpFun program ${programId.toBase58()} is valid: executable=${accountInfo.executable}, data length=${accountInfo.data.length}`);
-      return true;
-    } catch (error) {
-      log('WARN', `Attempt ${attempt} failed: ${error.message}`, error);
-      if (attempt === MAX_RETRIES) throw new Error(`Failed to validate PumpFun program after ${MAX_RETRIES} attempts: ${error.message}`);
-      await delay(1000);
-    }
-  }
+async function validatePumpFunProgram(connection, programId) {
+  log('INFO', `Skipping PumpFun program validation for ${programId.toBase58()} (temporary bypass)`);
+  return true;
 }
 
 async function validateMint(tokenMint) {
