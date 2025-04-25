@@ -147,13 +147,13 @@ async function snipeNewPools() {
     ws.send(JSON.stringify({
       jsonrpc: '2.0',
       id: 1,
-      method: 'transactionSubscribe',
+      method: 'logsSubscribe',
       params: [
         {
-          accountInclude: [RAYDIUM_AMM_PROGRAM.toBase58()],
+          mentions: [RAYDIUM_AMM_PROGRAM.toBase58()],
           commitment: 'confirmed',
         },
-        { commitment: 'confirmed', encoding: 'base64' },
+        { commitment: 'confirmed' },
       ],
     }));
   });
@@ -161,21 +161,43 @@ async function snipeNewPools() {
   ws.on('message', async (data) => {
     log('Received WebSocket message');
     const message = JSON.parse(data);
-    log(`Message content: ${JSON.stringify(message, null, 2)}`); // Log the full message for debugging
+    log(`Message content: ${JSON.stringify(message, null, 2)}`);
 
-    if (message.method !== 'transactionNotification') {
-      log('Skipping message: Not a transaction notification');
+    if (message.method !== 'logNotification') {
+      log('Skipping message: Not a log notification');
       return;
     }
 
-    const transaction = message.params?.result?.transaction;
+    const logData = message.params?.result?.value;
+    if (!logData) {
+      log('Skipping message: No log data');
+      return;
+    }
+
+    const signature = logData.signature;
+    if (!signature) {
+      log('Skipping message: No transaction signature');
+      return;
+    }
+
+    // Fetch the full transaction using the signature
+    const transactionResponse = await connection.getTransaction(signature, {
+      commitment: 'confirmed',
+      maxSupportedTransactionVersion: 0,
+    });
+    if (!transactionResponse) {
+      log(`Failed to fetch transaction for signature ${signature}`);
+      return;
+    }
+
+    const transaction = transactionResponse.transaction;
     if (!transaction) {
-      log('Skipping message: No transaction data');
+      log('Skipping transaction: No transaction data');
       return;
     }
 
     // Decode the transaction to find Raydium pool creation (initialize instruction)
-    const instructions = transaction.transaction?.message?.instructions || [];
+    const instructions = transaction.message?.instructions || [];
     const raydiumInstruction = instructions.find(inst =>
       inst?.programId === RAYDIUM_AMM_PROGRAM.toBase58() &&
       inst?.data
@@ -210,7 +232,7 @@ async function snipeNewPools() {
       return;
     }
 
-    const slot = message.params?.result?.slot;
+    const slot = transactionResponse.slot;
     const blockTimeResponse = await safeFetch(`https://api.helius.xyz/v0/blocks/${slot}?api-key=${HELIUS_API_KEY}`);
     if (!blockTimeResponse || !blockTimeResponse.time) {
       log(`Failed to fetch block time for slot ${slot}`);
