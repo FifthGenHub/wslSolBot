@@ -23,7 +23,7 @@ const {
 const { getAccount, getAssociatedTokenAddressSync } = require('@solana/spl-token');
 const borsh = require('@coral-xyz/borsh');
 const { PumpFunSDK } = require('pumpdotfun-sdk');
-const { config } = require('dotenv');
+const botConfig = require('./config.json'); // Use botConfig to avoid linter issues
 const { readFileSync, appendFileSync, existsSync, writeFileSync } = require('fs');
 const { createHash } = require('crypto');
 const { Mutex } = require('async-mutex');
@@ -32,10 +32,40 @@ const BN = require('bn.js');
 const fs = require('fs');
 const PUMP_FUN_PROGRAM_ID = new PublicKey(process.env.PUMP_FUN_PROGRAM_ID || '6EF8rrecthR5Dkzon8Nwu78hRwfCKubJ14M5uBEwF6P');
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'); // Add this line
-const CLEAR_TOKENS_ON_STARTUP = process.env.CLEAR_TOKENS_ON_STARTUP === 'false';
-const PAPER_TRADING = process.env.PAPER_TRADING === 'true';
-const WALLET_PATH = '/mnt/c/Users/Charl/solana_node_bot/my_mainnet_wallet.json'; // Ensure fs is imported for trades.log
+const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+const CLEAR_TOKENS_ON_STARTUP = botConfig.CLEAR_TOKENS_ON_STARTUP;
+const PAPER_TRADING = botConfig.PAPER_TRADING;
+const AMOUNT_TO_TRADE = botConfig.AMOUNT_TO_TRADE;
+const MAX_TOKEN_AGE_SECONDS = botConfig.MAX_TOKEN_AGE_SECONDS;
+const MINIMUM_LIQUIDITY = botConfig.MINIMUM_LIQUIDITY;
+const PRICE_THRESHOLD = botConfig.PRICE_THRESHOLD;
+const MINIMUM_BALANCE = botConfig.MINIMUM_BALANCE;
+const TRAILING_STOP_PERCENT = botConfig.TRAILING_STOP_PERCENT;
+const TAKE_PROFIT = botConfig.TAKE_PROFIT;
+const PNL_THRESHOLD = botConfig.PNL_THRESHOLD;
+const DEFAULT_DECIMALS = botConfig.DEFAULT_DECIMALS;
+const MAX_ATA_RETRIES = botConfig.MAX_ATA_RETRIES;
+const RPC_DELAY_MS = botConfig.RPC_DELAY_MS;
+const MAX_ATA_CREATIONS = botConfig.MAX_ATA_CREATIONS;
+const HEALTH_CHECK_INTERVAL_MINUTES = botConfig.HEALTH_CHECK_INTERVAL_MINUTES;
+const HEALTH_CHECK_INTERVAL_MS = HEALTH_CHECK_INTERVAL_MINUTES * 60 * 1000
+const RUG_PULL_MIN_LIQUIDITY = 0.1; // Minimum liquidity threshold to detect rug pulls (in SOL)
+const MAX_DAILY_TRADES = botConfig.MAX_DAILY_TRADES;
+const MINIMUM_HOLDERS = botConfig.MINIMUM_HOLDERS;
+const ACTIVITY_WINDOW_MINUTES = botConfig.ACTIVITY_WINDOW_MINUTES;
+const MAX_TOKENS_HELD = botConfig.MAX_TOKENS_HELD;
+const BLACKLIST_DURATION_HOURS = botConfig.BLACKLIST_DURATION_HOURS;
+const FORCE_SELL_DEAD_MINUTES = botConfig.FORCE_SELL_DEAD_MINUTES;
+const MIN_TXS_IN_WINDOW = botConfig.MIN_TXS_IN_WINDOW;
+const MAX_PENDING_TOKENS = botConfig.MAX_PENDING_TOKENS;
+const PARTIAL_TAKE_PROFIT_LEVELS = botConfig.PARTIAL_TAKE_PROFIT_LEVELS;
+const PARTIAL_TAKE_PROFIT_PERCENTS = botConfig.PARTIAL_TAKE_PROFIT_PERCENTS;
+const MOONBAG_PERCENT = botConfig.MOONBAG_PERCENT;
+const AUTO_COMPOUND = botConfig.AUTO_COMPOUND;
+const DYNAMIC_POSITION_SIZING = botConfig.DYNAMIC_POSITION_SIZING;
+const STOP_LOSS_PERCENT = botConfig.STOP_LOSS_PERCENT;
+const PROFIT_LOCK_THRESHOLD = botConfig.PROFIT_LOCK_THRESHOLD;
+const WALLET_PATH = '/mnt/c/Users/Charl/solana_node_bot/my_mainnet_wallet.json';
 
 // Define RPC_URL and FALLBACK_RPC_URL after loading .env
 const RPC_URL = process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -60,19 +90,15 @@ appConfig.HEALTH_CHECK_INTERVAL_MS = (appConfig.HEALTH_CHECK_INTERVAL_MINUTES ||
 const MAX_RETRIES = 3;
 const SNIPE_DELAY_MS = 1000; // Added delay between sniping attempts
 
-// --- Advanced Profit Features: Load from config or set defaults ---
-const PARTIAL_TAKE_PROFIT_LEVELS = appConfig.PARTIAL_TAKE_PROFIT_LEVELS || [2, 5, 10]; // Multipliers
-const PARTIAL_TAKE_PROFIT_PERCENTS = appConfig.PARTIAL_TAKE_PROFIT_PERCENTS || [0.25, 0.25, 0.4]; // Percents to sell at each level
-const MOONBAG_PERCENT = appConfig.MOONBAG_PERCENT || 0.05; // Keep 5% as moonbag
-const AUTO_COMPOUND = appConfig.AUTO_COMPOUND !== undefined ? appConfig.AUTO_COMPOUND : true;
-const DYNAMIC_POSITION_SIZING = appConfig.DYNAMIC_POSITION_SIZING !== undefined ? appConfig.DYNAMIC_POSITION_SIZING : true;
-const STOP_LOSS_PERCENT = appConfig.STOP_LOSS_PERCENT || 0.2; // 20% stop loss
-const PROFIT_LOCK_THRESHOLD = appConfig.PROFIT_LOCK_THRESHOLD || 5; // 5x profit triggers full exit
-
 // --- Configurable retry for new mints ---
 const HOLDERS_RETRY_COUNT = appConfig.HOLDERS_RETRY_COUNT || 3; // Number of retries
 const HOLDERS_RETRY_DELAY_MS = appConfig.HOLDERS_RETRY_DELAY_MS || 2000; // 2 seconds
-const MINIMUM_HOLDERS = appConfig.MINIMUM_HOLDERS || 3; // Safer default
+const HOLDERS_RETRY_TIMEOUT = appConfig.HOLDERS_RETRY_TIMEOUT || 10000; // 10 seconds
+
+
+
+
+
 
 async function getTokenHolders(tokenMint) {
   for (let attempt = 1; attempt <= HOLDERS_RETRY_COUNT; attempt++) {
@@ -459,11 +485,6 @@ const GLOBAL_STOP_LOSS_SOL = 0.01; // Stop all trading if wallet drops below thi
 const blacklistedTokens = new Map(); // tokenMint -> timestamp blacklisted until
 const RUG_PULL_LIQUIDITY_DROP = 0.8; // 80% drop triggers blacklist
 const BLACKLIST_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-// --- Advanced Feature: Max Daily Trades ---
-let dailyTradeCount = 0;
-let lastTradeDay = new Date().getUTCDate();
-const MAX_DAILY_TRADES = appConfig.MAX_DAILY_TRADES || 50;
 
 // --- Advanced Feature: CSV Trade Logging ---
 const tradeHistoryCsvFile = 'trade_history.csv';
