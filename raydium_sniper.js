@@ -152,7 +152,7 @@ async function snipeNewPools() {
       method: 'logsSubscribe',
       params: [
         {
-          mentions: [SPL_TOKEN_PROGRAM.toBase58()] // Temporarily monitor SPL Token Program
+          mentions: [RAYDIUM_AMM_PROGRAM.toBase58()] // Switch back to Raydium
         },
         {
           commitment: 'confirmed'
@@ -165,24 +165,24 @@ async function snipeNewPools() {
     log('Received WebSocket message');
     const message = JSON.parse(data);
     log(`Message content: ${JSON.stringify(message, null, 2)}`);
-
+  
     if (message.method !== 'logNotification') {
       log('Skipping message: Not a log notification');
       return;
     }
-
+  
     const logData = message.params?.result?.value;
     if (!logData) {
       log('Skipping message: No log data');
       return;
     }
-
+  
     const signature = logData.signature;
     if (!signature) {
       log('Skipping message: No transaction signature');
       return;
     }
-
+  
     // Fetch the full transaction using the signature
     const transactionResponse = await connection.getTransaction(signature, {
       commitment: 'confirmed',
@@ -192,27 +192,28 @@ async function snipeNewPools() {
       log(`Failed to fetch transaction for signature ${signature}`);
       return;
     }
-
+  
     const transaction = transactionResponse.transaction;
     if (!transaction) {
       log('Skipping transaction: No transaction data');
       return;
     }
-
+  
     // Decode the transaction to find Raydium pool creation (initialize instruction)
     const instructions = transaction.message?.instructions || [];
     const raydiumInstruction = instructions.find(inst =>
       inst?.programId === RAYDIUM_AMM_PROGRAM.toBase58() &&
       inst?.data
     );
-
+  
     if (!raydiumInstruction) {
-      log('Skipping transaction: No Raydium AMM initialize instruction found');
+      log('Skipping transaction: No Raydium AMM instruction found'); // Fixed log message
       return;
     }
-
-    // Log all accounts in the instruction for debugging
+  
+    // Rest of the logic remains unchanged
     log(`Raydium instruction accounts: ${raydiumInstruction.accounts?.join(', ') || 'No accounts'}`);
+    // ... (continue with poolAddress, tokenMint, etc.)
 
     // Extract pool address and token mint (simplified; in production, use Raydium IDL)
     const poolAddress = raydiumInstruction.accounts?.[0]; // First account is typically the pool
