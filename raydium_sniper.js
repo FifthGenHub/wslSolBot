@@ -37,6 +37,7 @@ log(`Wallet Public Key: ${wallet.publicKey.toBase58()}`);
 
 // --- UPDATED RAYDIUM AMM PROGRAM ADDRESS (2025) ---
 const RAYDIUM_AMM_PROGRAM = new PublicKey('RVKd61ztZW9GdKzvKzF1dM1iQb1r7Q2Q8k5Y6bRZzjL');
+const SPL_TOKEN_PROGRAM = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'); // SPL Token Program
 const AMOUNT_TO_TRADE = 0.01 * LAMPORTS_PER_SOL; // ~$1.34 per trade
 const MINIMUM_LIQUIDITY = 0.1 * LAMPORTS_PER_SOL; // 0.1 SOL minimum liquidity
 const TAKE_PROFIT = 1.0; // 100% profit
@@ -151,7 +152,7 @@ async function snipeNewPools() {
       method: 'logsSubscribe',
       params: [
         {
-          mentions: [RAYDIUM_AMM_PROGRAM.toBase58()]
+          mentions: [SPL_TOKEN_PROGRAM.toBase58()] // Temporarily monitor SPL Token Program
         },
         {
           commitment: 'confirmed'
