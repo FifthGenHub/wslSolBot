@@ -134,6 +134,7 @@ async function executeSwap(tokenMint, amount, isBuy) {
     return false;
   }
 }
+
 async function snipeNewPools() {
   log('Starting Raydium sniper bot...');
 
@@ -150,10 +151,11 @@ async function snipeNewPools() {
       method: 'logsSubscribe',
       params: [
         {
-          mentions: [RAYDIUM_AMM_PROGRAM.toBase58()],
-          commitment: 'confirmed',
+          mentions: [RAYDIUM_AMM_PROGRAM.toBase58()]
         },
-        { commitment: 'confirmed' },
+        {
+          commitment: 'confirmed'
+        }
       ],
     }));
   });
