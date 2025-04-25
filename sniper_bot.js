@@ -34,6 +34,7 @@ const PUMP_FUN_PROGRAM_ID = new PublicKey(process.env.PUMP_FUN_PROGRAM_ID || '6E
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'); // Add this line
 const CLEAR_TOKENS_ON_STARTUP = process.env.CLEAR_TOKENS_ON_STARTUP === 'false';
+const PAPER_TRADING = process.env.PAPER_TRADING === 'true';
 const WALLET_PATH = '/mnt/c/Users/Charl/solana_node_bot/my_mainnet_wallet.json'; // Ensure fs is imported for trades.log
 
 // Define RPC_URL and FALLBACK_RPC_URL after loading .env
