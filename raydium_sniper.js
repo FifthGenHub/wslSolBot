@@ -36,12 +36,11 @@ const wallet = Keypair.fromSecretKey(
 log(`Wallet Public Key: ${wallet.publicKey.toBase58()}`);
 
 // --- UPDATED RAYDIUM AMM PROGRAM ADDRESS (2025) ---
-const RAYDIUM_AMM_PROGRAM = new PublicKey('RVKd61ztZW9GdKzvKzF1dM1iQb1r7Q2Q8k5Y6bRZzjL'); // Raydium AMM program
 const AMOUNT_TO_TRADE = 0.01 * LAMPORTS_PER_SOL; // ~$1.34 per trade
-const MINIMUM_LIQUIDITY = 5 * LAMPORTS_PER_SOL; // 1 SOL minimum liquidity
+const MINIMUM_LIQUIDITY = 0.3 * LAMPORTS_PER_SOL; // 0.3 SOL minimum liquidity
 const TAKE_PROFIT = 1.0; // 100% profit
 const STOP_LOSS = -0.5; // 50% stop-loss
-const MAX_TOKEN_AGE_SECONDS = 300; // 1 minute
+const MAX_TOKEN_AGE_SECONDS = 600; // 10 minutes
 
 const purchasedTokens = new Map();
 
@@ -134,8 +133,6 @@ async function executeSwap(tokenMint, amount, isBuy) {
     return false;
   }
 }
-
-// Monitor new Raydium pools using Helius WebSocket
 async function snipeNewPools() {
   log('Starting Raydium sniper bot...');
 
@@ -143,6 +140,22 @@ async function snipeNewPools() {
   log(`Wallet balance: ${balance / LAMPORTS_PER_SOL} SOL`);
 
   const ws = new WebSocket(`wss://rpc.helius.xyz/?api-key=${HELIUS_API_KEY}`);
+
+  ws.on('open', () => {
+    log('Connected to Helius WebSocket');
+    ws.send(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'transactionSubscribe',
+      params: [
+        {
+          accountInclude: [RAYDIUM_AMM_PROGRAM.toBase58()],
+          commitment: 'confirmed',
+        },
+        { commitment: 'confirmed', encoding: 'base64' },
+      ],
+    }));
+  });
 
   ws.on('message', async (data) => {
     log('Received WebSocket message');
@@ -162,7 +175,7 @@ async function snipeNewPools() {
     const instructions = transaction.transaction.message.instructions;
     const raydiumInstruction = instructions.find(inst =>
       inst.programId === RAYDIUM_AMM_PROGRAM.toBase58() &&
-      inst.data // Simplified: Look for initialize instruction (requires IDL for exact decoding)
+      inst.data
     );
 
     if (!raydiumInstruction) {
@@ -170,6 +183,9 @@ async function snipeNewPools() {
       return;
     }
 
+    // Log all accounts in the instruction for debugging
+    log(`Raydium instruction accounts: ${raydiumInstruction.accounts.join(', ')}`);
+
     // Extract pool address and token mint (simplified; in production, use Raydium IDL)
     const poolAddress = raydiumInstruction.accounts[0]; // First account is typically the pool
     const tokenMint = raydiumInstruction.accounts[4]; // Token mint is usually the 5th account (depends on instruction layout)
@@ -193,8 +209,11 @@ async function snipeNewPools() {
 
     const slot = message.params.result.slot;
     const blockTimeResponse = await safeFetch(`https://api.helius.xyz/v0/blocks/${slot}?api-key=${HELIUS_API_KEY}`);
-    const block = blockTimeResponse;
-    const blockTime = block.time;
+    if (!blockTimeResponse || !blockTimeResponse.time) {
+      log(`Failed to fetch block time for slot ${slot}`);
+      return;
+    }
+    const blockTime = blockTimeResponse.time;
     const currentTime = Math.floor(Date.now() / 1000);
     const tokenAgeSeconds = currentTime - blockTime;
     if (tokenAgeSeconds > MAX_TOKEN_AGE_SECONDS) {
@@ -220,79 +239,16 @@ async function snipeNewPools() {
   });
 
   ws.on('error', (error) => log(`WebSocket error: ${error.message}`));
-  ws.on('close', (code, reason) => log(`WebSocket closed: ${code} - ${reason}`));
+  ws.on('close', (code, reason) => {
+    log(`WebSocket closed: ${code} - ${reason}`);
+    log('Attempting to reconnect in 5 seconds...');
+    setTimeout(() => {
+      snipeNewPools();
+    }, 5000);
+  });
 }
 
-  ws.on('message', async (data) => {
-    const message = JSON.parse(data);
-    if (message.method !== 'transactionNotification') return;
-
-    const transaction = message.params.result.transaction;
-    if (!transaction) return;
-
-    // Decode the transaction to find Raydium pool creation (initialize instruction)
-    const instructions = transaction.transaction.message.instructions;
-    const raydiumInstruction = instructions.find(inst =>
-      inst.programId === RAYDIUM_AMM_PROGRAM.toBase58() &&
-      inst.data // Simplified: Look for initialize instruction (requires IDL for exact decoding)
-    );
-
-    if (!raydiumInstruction) return;
-
-    // Extract pool address and token mint (simplified; in production, use Raydium IDL)
-    const poolAddress = raydiumInstruction.accounts[0]; // First account is typically the pool
-    const tokenMint = raydiumInstruction.accounts[4]; // Token mint is usually the 5th account (depends on instruction layout)
-
-    if (!poolAddress || !tokenMint) {
-      log('Failed to extract pool address or token mint');
-      return;
-    }
-
-    const poolDetails = await fetchPoolDetails(poolAddress);
-    if (!poolDetails || poolDetails.liquidity < MINIMUM_LIQUIDITY) {
-      log(`Skipping pool ${poolAddress}: Insufficient liquidity (${poolDetails?.liquidity / LAMPORTS_PER_SOL} SOL)`);
-      return;
-    }
-
-    const metadata = await fetchTokenMetadata(tokenMint);
-    if (!metadata) {
-      log(`Skipping token ${tokenMint}: Failed to fetch metadata`);
-      return;
-    }
-
-    const slot = message.params.result.slot;
-    const blockTimeResponse = await safeFetch(`https://api.helius.xyz/v0/blocks/${slot}?api-key=${HELIUS_API_KEY}`);
-    const block = blockTimeResponse;
-    const blockTime = block.time;
-    const currentTime = Math.floor(Date.now() / 1000);
-    const tokenAgeSeconds = currentTime - blockTime;
-    if (tokenAgeSeconds > MAX_TOKEN_AGE_SECONDS) {
-      log(`Skipping token ${tokenMint}: Too old (${tokenAgeSeconds}s)`);
-      return;
-    }
-
-    log(`New pool detected: Token ${tokenMint}, Liquidity ${poolDetails.liquidity / LAMPORTS_PER_SOL} SOL`);
-    const buyPrice = await fetchTokenPrice(tokenMint, AMOUNT_TO_TRADE);
-    if (!buyPrice) {
-      log(`Skipping token ${tokenMint}: Failed to fetch buy price`);
-      return;
-    }
-
-    const success = await executeSwap(tokenMint, AMOUNT_TO_TRADE, true);
-    if (success) {
-      purchasedTokens.set(tokenMint, {
-        buyPrice: buyPrice,
-        amount: AMOUNT_TO_TRADE / LAMPORTS_PER_SOL,
-      });
-      log(`Sniped ${tokenMint}: Bought ${AMOUNT_TO_TRADE / LAMPORTS_PER_SOL} SOL worth at ${buyPrice} SOL`);
-    }
-  });
-
-  // --- IMPROVED ERROR HANDLING FOR WEBSOCKET ---
-  ws.on('error', (error) => log(`WebSocket error: ${error.message}`));
-  ws.on('close', (code, reason) => log(`WebSocket closed: ${code} - ${reason}`));
-
-  // Monitor and sell sniped tokens
+// Monitor purchased tokens and sell if profit/loss conditions are met
 async function monitorAndSell() {
   while (true) {
     for (const [tokenMint, { buyPrice, amount }] of purchasedTokens.entries()) {
