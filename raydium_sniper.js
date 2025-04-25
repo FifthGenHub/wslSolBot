@@ -142,7 +142,7 @@ async function snipeNewPools() {
   const balance = await connection.getBalance(wallet.publicKey);
   log(`Wallet balance: ${balance / LAMPORTS_PER_SOL} SOL`);
 
-  const ws = new WebSocket(`wss://ws.helius-rpc.com?api-key=${HELIUS_API_KEY}`);
+  const ws = new WebSocket(`wss://rpc.helius.xyz/?api-key=${HELIUS_API_KEY}`);
 
   ws.on('open', () => {
     log('Connected to Helius WebSocket');
