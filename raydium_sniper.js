@@ -38,10 +38,10 @@ log(`Wallet Public Key: ${wallet.publicKey.toBase58()}`);
 // --- UPDATED RAYDIUM AMM PROGRAM ADDRESS (2025) ---
 const RAYDIUM_AMM_PROGRAM = new PublicKey('RVKd61ztZW9GdKzvKzF1dM1iQb1r7Q2Q8k5Y6bRZzjL');
 const AMOUNT_TO_TRADE = 0.01 * LAMPORTS_PER_SOL; // ~$1.34 per trade
-const MINIMUM_LIQUIDITY = 0.3 * LAMPORTS_PER_SOL; // 0.3 SOL minimum liquidity
+const MINIMUM_LIQUIDITY = 0.1 * LAMPORTS_PER_SOL; // 0.1 SOL minimum liquidity
 const TAKE_PROFIT = 1.0; // 100% profit
 const STOP_LOSS = -0.5; // 50% stop-loss
-const MAX_TOKEN_AGE_SECONDS = 600; // 10 minutes
+const MAX_TOKEN_AGE_SECONDS = 1800; // 30 minutes
 
 const purchasedTokens = new Map();
 
@@ -161,22 +161,24 @@ async function snipeNewPools() {
   ws.on('message', async (data) => {
     log('Received WebSocket message');
     const message = JSON.parse(data);
+    log(`Message content: ${JSON.stringify(message, null, 2)}`); // Log the full message for debugging
+
     if (message.method !== 'transactionNotification') {
       log('Skipping message: Not a transaction notification');
       return;
     }
 
-    const transaction = message.params.result.transaction;
+    const transaction = message.params?.result?.transaction;
     if (!transaction) {
       log('Skipping message: No transaction data');
       return;
     }
 
     // Decode the transaction to find Raydium pool creation (initialize instruction)
-    const instructions = transaction.transaction.message.instructions;
+    const instructions = transaction.transaction?.message?.instructions || [];
     const raydiumInstruction = instructions.find(inst =>
-      inst.programId === RAYDIUM_AMM_PROGRAM.toBase58() &&
-      inst.data
+      inst?.programId === RAYDIUM_AMM_PROGRAM.toBase58() &&
+      inst?.data
     );
 
     if (!raydiumInstruction) {
@@ -185,11 +187,11 @@ async function snipeNewPools() {
     }
 
     // Log all accounts in the instruction for debugging
-    log(`Raydium instruction accounts: ${raydiumInstruction.accounts.join(', ')}`);
+    log(`Raydium instruction accounts: ${raydiumInstruction.accounts?.join(', ') || 'No accounts'}`);
 
     // Extract pool address and token mint (simplified; in production, use Raydium IDL)
-    const poolAddress = raydiumInstruction.accounts[0]; // First account is typically the pool
-    const tokenMint = raydiumInstruction.accounts[4]; // Token mint is usually the 5th account (depends on instruction layout)
+    const poolAddress = raydiumInstruction.accounts?.[0]; // First account is typically the pool
+    const tokenMint = raydiumInstruction.accounts?.[4]; // Token mint is usually the 5th account (depends on instruction layout)
 
     if (!poolAddress || !tokenMint) {
       log('Failed to extract pool address or token mint');
@@ -208,7 +210,7 @@ async function snipeNewPools() {
       return;
     }
 
-    const slot = message.params.result.slot;
+    const slot = message.params?.result?.slot;
     const blockTimeResponse = await safeFetch(`https://api.helius.xyz/v0/blocks/${slot}?api-key=${HELIUS_API_KEY}`);
     if (!blockTimeResponse || !blockTimeResponse.time) {
       log(`Failed to fetch block time for slot ${slot}`);
