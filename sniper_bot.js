@@ -29,9 +29,7 @@ const { createHash } = require('crypto');
 const { Mutex } = require('async-mutex');
 const RateLimiter = require('limiter').RateLimiter;
 const BN = require('bn.js');
-const fs = require('fs');
-const PUMP_FUN_PROGRAM_ID = process.env.PUMP_FUN_PROGRAM_ID || '6EF8rrecthR5Dkzon8Nwu78hRwfCKubJ14M5uBEwF6P';
-const WALLET_PATH = '/mnt/c/Users/Charl/solana_node_bot/my_mainnet_wallet.json'; // Ensure fs is imported for trades.log
+const fs = require('fs'); // Ensure fs is imported for trades.log
 
 // Define RPC_URL and FALLBACK_RPC_URL after loading .env
 const RPC_URL = process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -860,13 +858,15 @@ async function executeTrade(tokenMint, amountToTrade, isBuy, bondingCurveAddress
       }
     } else {
       // PATCH: Always allow simulated sell in PAPER_TRADING mode
+      let balance = 0;
       let amountToSell = 0;
       if (PAPER_TRADING) {
-      const purchased = purchasedTokens.get(tokenMint.toBase58());
-      amountToSell = purchased ? purchased.amount : amountToTrade;
+        // In paper trading, allow sell even if tokenAccount is missing
+        balance = amountToTrade / Math.pow(10, DEFAULT_DECIMALS); // Use requested amount
+        amountToSell = balance;
       } else {
-      balance = Number(tokenAccount.amount) / Math.pow(10, DEFAULT_DECIMALS);
-      amountToSell = Math.min(balance, amountToTrade / Math.pow(10, DEFAULT_DECIMALS));
+        balance = Number(tokenAccount.amount) / Math.pow(10, DEFAULT_DECIMALS);
+        amountToSell = Math.min(balance, amountToTrade / Math.pow(10, DEFAULT_DECIMALS));
       }
       const sellAmountBN = new BN(amountToSell.toFixed(0)).mul(new BN(10).pow(new BN(DEFAULT_DECIMALS)));
       if (amountToSell <= 0) {
@@ -1049,7 +1049,6 @@ async function monitorTokens() {
           purchasedTokens.delete(tokenMint);
           continue;
         }
-        log('INFO', `Current price for ${tokenMint}: ${currentPrice}, Buy price: ${buyPrice}`);
         const profit = (currentPrice - buyPrice) / buyPrice;
         // --- Advanced profit logic ---
         let tracking = tokenProfitTracking.get(tokenMint) || { levelsHit: [], moonbagLeft: false, highestPrice: buyPrice };
